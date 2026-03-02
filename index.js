@@ -1,10 +1,22 @@
 require('dotenv').config();
+const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
-const nodemailer = require('nodemailer');
 
-// --- 1. FIREBASE SETUP ---
+// --- 1. RENDER DUMMY SERVER ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send("Bi'Adana Eczane Botu Aktif ve Çalışıyor! 🚀");
+});
+
+app.listen(PORT, () => {
+    console.log(`✅ Sunucu ${PORT} portunda dinleniyor. Render deploy hatası çözüldü!`);
+});
+
+// --- 2. FIREBASE SETUP ---
 try {
     const serviceAccount = require('./serviceAccountKey.json');
     admin.initializeApp({
@@ -18,7 +30,7 @@ try {
 
 const db = admin.firestore();
 
-// --- 2. CONFIGURATION ---
+// --- 3. CONFIGURATION ---
 const CITY = 'Adana';
 const DISTRICTS = [
     'Seyhan', 'Yüreğir', 'Çukurova', 'Sarıçam', 'Ceyhan', 
@@ -26,61 +38,13 @@ const DISTRICTS = [
     'Yumurtalık', 'Tufanbeyli', 'Feke', 'Aladağ', 'Saimbeyli'
 ];
 
-// --- 3. MAIL CONFIGURATION ---
-// Gmail kullanıyorsan "Uygulama Şifresi" oluşturman gerekir.
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER, // .env dosyasına ekle
-        pass: process.env.EMAIL_PASS  // .env dosyasına ekle (Uygulama şifresi)
-    }
-});
-
 // --- 4. FUNCTIONS ---
-
 function normalizeName(name) {
     return name.toLowerCase()
         .replace(/ eczanesi/gi, '')
         .replace(/ ecz\./gi, '')
         .replace(/ ecz/gi, '')
         .trim();
-}
-
-async function sendSummaryEmail(updatedList, errorList) {
-    const dateStr = new Date().toLocaleDateString('tr-TR');
-    
-    const successHtml = updatedList.length > 0 
-        ? updatedList.map(p => `<li><b>${p.district}:</b> ${p.name}</li>`).join('')
-        : "<li>⚠️ Hiçbir eczane güncellenemedi!</li>";
-        
-    const errorHtml = errorList.length > 0
-        ? `<h3 style="color: red;">Hatalar / Bulunamayanlar:</h3><ul>` + 
-          errorList.map(e => `<li><b>${e.district}:</b> ${e.name}</li>`).join('') + `</ul>`
-        : "";
-
-    const mailOptions = {
-        from: `"Bi'Adana Otomasyon" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_USER,
-        subject: `💊 Nöbetçi Eczane Raporu - ${dateStr}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
-                <h2>Günaydın Ahmet! 🌯</h2>
-                <p><b>${dateStr}</b> tarihi için nöbetçi eczane güncelleme işlemi tamamlandı.</p>
-                <hr/>
-                <h3 style="color: green;">Güncellenen Eczaneler:</h3>
-                <ul>${successHtml}</ul>
-                ${errorHtml}
-                <p style="margin-top: 20px; font-size: 12px; color: #777;">Bu rapor Bi'Adana backend sistemi tarafından otomatik oluşturulmuştur.</p>
-            </div>
-        `
-    };
-
-    try {
-        await transporter.sendMail(mailOptions);
-        console.log("📧 Özet maili gönderildi.");
-    } catch (error) {
-        console.error("❌ Mail hatası:", error.message);
-    }
 }
 
 async function resetDutyStatuses() {
@@ -102,9 +66,6 @@ async function resetDutyStatuses() {
 
 async function syncDutyPharmacies() {
     await resetDutyStatuses();
-    const updatedList = [];
-    const errorList = [];
-    
     console.log(`🚀 Starting sync job...`);
 
     for (const district of DISTRICTS) {
@@ -141,19 +102,17 @@ async function syncDutyPharmacies() {
                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
                     });
                     console.log(`✨ SET ON DUTY: ${bestMatch.data().name} (${district})`);
-                    updatedList.push({ district, name: bestMatch.data().name });
                 } else {
                     console.warn(`⚠️ Not found: ${pharmacy.pharmacyName}`);
-                    errorList.push({ district, name: pharmacy.pharmacyName });
                 }
             }
         } catch (error) {
             console.error(`❌ API Error for ${district}:`, error.message);
         }
+        // API rate limit'e takılmamak için kısa bir bekleme
         await new Promise(resolve => setTimeout(resolve, 1200));
     }
     
-    await sendSummaryEmail(updatedList, errorList);
     console.log("🏁 Daily sync completed.");
 }
 
