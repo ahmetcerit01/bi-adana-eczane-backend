@@ -5,16 +5,16 @@ const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
 
-// --- 1. RENDER DUMMY SERVER (Port Hatasını Çözen Kısım) ---
+// --- 1. RENDER DUMMY SERVER ---
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-    res.send("Bi'Adana Eczane Botu Sadece Otomasyon Modunda Çalışıyor! 🚀");
+    res.send("Bi'Adana Eczane Botu (Yeni Mimari - Test Modu) Aktif! 🚀");
 });
 
 app.listen(PORT, () => {
-    console.log(`✅ Sunucu ${PORT} portunda dinleniyor. Render deploy hatası çözüldü!`);
+    console.log(`✅ Sunucu ${PORT} portunda dinleniyor.`);
 });
 
 // --- 2. FIREBASE SETUP ---
@@ -39,35 +39,23 @@ const DISTRICTS = [
     'Yumurtalık', 'Tufanbeyli', 'Feke', 'Aladağ', 'Saimbeyli'
 ];
 
-// --- 4. FUNCTIONS ---
-function normalizeName(name) {
-    return name.toLowerCase()
-        .replace(/ eczanesi/gi, '')
-        .replace(/ ecz\./gi, '')
-        .replace(/ ecz/gi, '')
-        .trim();
+// Doküman ID'sini oluşturmak için Türkçe karakterleri temizleyen fonksiyon (Örn: Çukurova -> cukurova_today)
+function normalizeDistrictId(district) {
+    return district.toLowerCase()
+        .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+        .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u') + '_today';
 }
 
-async function resetDutyStatuses() {
-    console.log("🧹 Resetting current duty statuses...");
-    const dutySnapshot = await db.collection('places')
-        .where('categoryId', '==', 'eczane')
-        .where('isOnDuty', '==', true)
-        .get();
-
-    if (dutySnapshot.empty) return;
-
-    const batch = db.batch();
-    dutySnapshot.forEach(doc => {
-        batch.update(doc.ref, { isOnDuty: false });
-    });
-    await batch.commit();
-    console.log(`✅ Successfully reset ${dutySnapshot.size} pharmacies.`);
+// Bugünün tarihini "DD.MM.YYYY" formatında al
+function getTodayDateString() {
+    const d = new Date();
+    return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
 }
 
+// --- 4. MAIN SYNC FUNCTION ---
 async function syncDutyPharmacies() {
-    await resetDutyStatuses();
-    console.log(`🚀 Starting sync job...`);
+    console.log(`🚀 Starting sync job with NEW ARCHITECTURE...`);
+    const dateStr = getTodayDateString();
 
     for (const district of DISTRICTS) {
         try {
@@ -84,29 +72,27 @@ async function syncDutyPharmacies() {
             const response = await axios.request(options);
             const apiList = response.data.data || response.data.result || [];
 
-            for (const pharmacy of apiList) {
-                const searchName = normalizeName(pharmacy.pharmacyName);
-                const placeQuery = await db.collection('places')
-                    .where('categoryId', '==', 'eczane')
-                    .where('name', '>=', pharmacy.pharmacyName.split(' ')[0])
-                    .get();
+            // API'den gelen veriyi Firebase'deki (resimde attığın) yapıya uygun hale getiriyoruz
+            const pharmaciesArray = apiList.map(p => ({
+                name: p.pharmacyName || "",
+                address: p.address || "",
+                phone: p.phone || "",
+                directions: p.directions || "",
+                latitude: parseFloat(p.latitude) || 0,
+                longitude: parseFloat(p.longitude) || 0
+            }));
 
-                if (!placeQuery.empty) {
-                    const bestMatch = placeQuery.docs.find(doc => {
-                        const dbName = doc.data().name.toLowerCase();
-                        const dbDistrict = doc.data().district.toLowerCase();
-                        return dbName.includes(searchName) && dbDistrict.includes(district.toLowerCase().replace('ü','u').replace('ç','c'));
-                    }) || placeQuery.docs[0];
+            const docId = normalizeDistrictId(district);
 
-                    await bestMatch.ref.update({
-                        isOnDuty: true,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                    console.log(`✨ SET ON DUTY: ${bestMatch.data().name} (${district})`);
-                } else {
-                    console.warn(`⚠️ Not found: ${pharmacy.pharmacyName}`);
-                }
-            }
+            // Eczaneler koleksiyonundaki ilgili ilçe dokümanını komple eziyoruz/güncelliyoruz
+            await db.collection('eczaneler').doc(docId).set({
+                date: dateStr,
+                districtName: district,
+                pharmacies: pharmaciesArray
+            });
+
+            console.log(`✨ UPDATED: ${docId} -> ${pharmaciesArray.length} eczane eklendi.`);
+            
         } catch (error) {
             console.error(`❌ API Error for ${district}:`, error.message);
         }
@@ -116,11 +102,13 @@ async function syncDutyPharmacies() {
     console.log("🏁 Daily sync completed. Otomasyon bitti.");
 }
 
-// --- 5. SCHEDULER ---
-cron.schedule('30 08 * * *', () => {
+// --- 5. SCHEDULER (TEST MODU) ---
+// TEST İÇİN: Her 5 dakikada bir çalışacak şekilde ayarlandı (*/5 * * * *)
+cron.schedule('*/5 * * * *', () => {
+    console.log("⏱️ 5 dakikalık test tetiklendi!");
     syncDutyPharmacies();
 });
 
-console.log("⏳ Background worker active. Waiting for 08:30 AM scheduler...");
-// Bot ilk açıldığında da hemen bir kere çalışsın diye:
+console.log("⏳ Background worker active. Waiting for 5-minute scheduler...");
+// Bot ilk açıldığında da hemen bir kere çalışsın:
 syncDutyPharmacies();
