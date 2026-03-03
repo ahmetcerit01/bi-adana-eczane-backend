@@ -1,14 +1,15 @@
 {
-  "name": "nobetcieczanebackend",
+  "name": "bi-adana-eczane-backend",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Ahmet Cerit",
   "license": "ISC",
-  "description": "",
+  "description": "Bi'Adana Nöbetçi Eczane Otomasyonu",
   "dependencies": {
     "axios": "^1.13.5",
     "dotenv": "^17.3.1",
