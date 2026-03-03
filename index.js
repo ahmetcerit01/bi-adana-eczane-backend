@@ -5,12 +5,12 @@ const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
 
-// --- 1. RENDER DUMMY SERVER ---
+// --- 1. RENDER SERVER SETUP ---
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-    res.send("Bi'Adana Eczane Botu (5 DK TEST + TÜRKİYE SAATİ) Aktif! 🚀");
+    res.send("Bi'Adana Eczane Otomasyonu (08:30 Sistemi) Aktif! 🚀");
 });
 
 app.listen(PORT, () => {
@@ -23,9 +23,9 @@ try {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
-    console.log("✅ Firebase initialized successfully.");
+    console.log("✅ Firebase baglantisi kuruldu.");
 } catch (error) {
-    console.error("❌ CRITICAL ERROR: 'serviceAccountKey.json' not found!");
+    console.error("❌ Firebase Hatasi:", error.message);
     process.exit(1);
 }
 
@@ -45,7 +45,6 @@ function normalizeDistrictId(district) {
         .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u') + '_today';
 }
 
-// 🇹🇷 TÜRKİYE SAATİNE GÖRE BUGÜNÜN TARİHİNİ AL (RENDER AMERİKA'DA OLSA BİLE)
 function getTodayDateString() {
     const d = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
     return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
@@ -53,7 +52,7 @@ function getTodayDateString() {
 
 // --- 4. MAIN SYNC FUNCTION ---
 async function syncDutyPharmacies() {
-    console.log(`🚀 Starting sync job...`);
+    console.log(`🚀 Adana geneli eczane senkronizasyonu basladi...`);
     const dateStr = getTodayDateString();
 
     for (const district of DISTRICTS) {
@@ -88,26 +87,25 @@ async function syncDutyPharmacies() {
                 pharmacies: pharmaciesArray
             });
 
-            console.log(`✨ UPDATED: ${docId} -> ${pharmaciesArray.length} eczane eklendi. (Tarih: ${dateStr})`);
+            console.log(`✨ ${district} guncellendi: ${pharmaciesArray.length} eczane.`);
             
         } catch (error) {
-            console.error(`❌ API Error for ${district}:`, error.message);
+            console.error(`❌ ${district} icin hata olustu:`, error.message);
         }
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        // API limitine takilmamak icin her ilce arasinda 3 saniye bekle
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
     
-    console.log("🏁 Daily sync completed. Otomasyon bitti.");
+    console.log("🏁 Islem tamamlandi. Tüm ilceler guncel.");
 }
 
-// --- 5. SCHEDULER (5 DAKİKALIK TEST MODU + TÜRKİYE SAAT DİLİMİ) ---
-cron.schedule('*/5 * * * *', () => {
-    console.log("⏱️ 5 dakikalık test tetiklendi!");
+// --- 5. SCHEDULER (SABAH 08:30) ---
+cron.schedule('30 08 * * *', () => {
+    console.log("⏰ Gunluk eczane mesaisi basladi!");
     syncDutyPharmacies();
 }, {
     scheduled: true,
     timezone: "Europe/Istanbul"
 });
 
-console.log("⏳ Background worker active. Waiting for 5-minute scheduler...");
-// Bot ilk açıldığında da hemen bir kere çalışsın:
-syncDutyPharmacies();
+console.log("⏳ Bot uykuda... Her sabah 08:30'da otomatik calisacak.");
