@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-    res.send("Bi'Adana Eczane Botu (Yeni Mimari - Test Modu) Aktif! 🚀");
+    res.send("Bi'Adana Eczane Botu (5 DK TEST + TÜRKİYE SAATİ) Aktif! 🚀");
 });
 
 app.listen(PORT, () => {
@@ -39,22 +39,21 @@ const DISTRICTS = [
     'Yumurtalık', 'Tufanbeyli', 'Feke', 'Aladağ', 'Saimbeyli'
 ];
 
-// Doküman ID'sini oluşturmak için Türkçe karakterleri temizleyen fonksiyon (Örn: Çukurova -> cukurova_today)
 function normalizeDistrictId(district) {
     return district.toLowerCase()
         .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
         .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u') + '_today';
 }
 
-// Bugünün tarihini "DD.MM.YYYY" formatında al
+// 🇹🇷 TÜRKİYE SAATİNE GÖRE BUGÜNÜN TARİHİNİ AL (RENDER AMERİKA'DA OLSA BİLE)
 function getTodayDateString() {
-    const d = new Date();
+    const d = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
     return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
 }
 
 // --- 4. MAIN SYNC FUNCTION ---
 async function syncDutyPharmacies() {
-    console.log(`🚀 Starting sync job with NEW ARCHITECTURE...`);
+    console.log(`🚀 Starting sync job...`);
     const dateStr = getTodayDateString();
 
     for (const district of DISTRICTS) {
@@ -72,7 +71,6 @@ async function syncDutyPharmacies() {
             const response = await axios.request(options);
             const apiList = response.data.data || response.data.result || [];
 
-            // API'den gelen veriyi Firebase'deki (resimde attığın) yapıya uygun hale getiriyoruz
             const pharmaciesArray = apiList.map(p => ({
                 name: p.pharmacyName || "",
                 address: p.address || "",
@@ -84,14 +82,13 @@ async function syncDutyPharmacies() {
 
             const docId = normalizeDistrictId(district);
 
-            // Eczaneler koleksiyonundaki ilgili ilçe dokümanını komple eziyoruz/güncelliyoruz
             await db.collection('eczaneler').doc(docId).set({
                 date: dateStr,
                 districtName: district,
                 pharmacies: pharmaciesArray
             });
 
-            console.log(`✨ UPDATED: ${docId} -> ${pharmaciesArray.length} eczane eklendi.`);
+            console.log(`✨ UPDATED: ${docId} -> ${pharmaciesArray.length} eczane eklendi. (Tarih: ${dateStr})`);
             
         } catch (error) {
             console.error(`❌ API Error for ${district}:`, error.message);
@@ -102,11 +99,13 @@ async function syncDutyPharmacies() {
     console.log("🏁 Daily sync completed. Otomasyon bitti.");
 }
 
-// --- 5. SCHEDULER (TEST MODU) ---
-// TEST İÇİN: Her 5 dakikada bir çalışacak şekilde ayarlandı (*/5 * * * *)
+// --- 5. SCHEDULER (5 DAKİKALIK TEST MODU + TÜRKİYE SAAT DİLİMİ) ---
 cron.schedule('*/5 * * * *', () => {
     console.log("⏱️ 5 dakikalık test tetiklendi!");
     syncDutyPharmacies();
+}, {
+    scheduled: true,
+    timezone: "Europe/Istanbul"
 });
 
 console.log("⏳ Background worker active. Waiting for 5-minute scheduler...");
