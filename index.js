@@ -3,13 +3,14 @@ const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
+const path = require('path');
 
-// --- 1. RENDER DUMMY SERVER ---
+// --- 1. RENDER DUMMY SERVER (Port Hatasını Çözen Kısım) ---
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-    res.send("Bi'Adana Eczane Botu Aktif ve Çalışıyor! 🚀");
+    res.send("Bi'Adana Eczane Botu Sadece Otomasyon Modunda Çalışıyor! 🚀");
 });
 
 app.listen(PORT, () => {
@@ -18,7 +19,7 @@ app.listen(PORT, () => {
 
 // --- 2. FIREBASE SETUP ---
 try {
-    const serviceAccount = require('./serviceAccountKey.json');
+    const serviceAccount = require(path.join(__dirname, 'serviceAccountKey.json'));
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
@@ -109,11 +110,10 @@ async function syncDutyPharmacies() {
         } catch (error) {
             console.error(`❌ API Error for ${district}:`, error.message);
         }
-        // API rate limit'e takılmamak için kısa bir bekleme
         await new Promise(resolve => setTimeout(resolve, 1200));
     }
     
-    console.log("🏁 Daily sync completed.");
+    console.log("🏁 Daily sync completed. Otomasyon bitti.");
 }
 
 // --- 5. SCHEDULER ---
@@ -122,4 +122,5 @@ cron.schedule('30 08 * * *', () => {
 });
 
 console.log("⏳ Background worker active. Waiting for 08:30 AM scheduler...");
+// Bot ilk açıldığında da hemen bir kere çalışsın diye:
 syncDutyPharmacies();
